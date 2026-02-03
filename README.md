@@ -1,7 +1,6 @@
 # Epstein Data Set 11 Scraper
 
-Disclaimer: This script is just an example of how to assist when manually pursuing the site. For others, you shouldn't use this unless it complies with the current policy of the source site. Use at your own discretion. Always respect terms of service, robots.txt, and legal guidelines when scraping any website. This is for educational purposes only and may not be suitable for production use without proper authorization.This script scrapes DOJ Epstein Data Set 11 pages, extracts PDF links, and downloads them. It can use Playwright for age‑gate/verification handling, then switch to fast requests for bulk crawling.
-
+This script scrapes DOJ Epstein Data Set 11 pages, extracts PDF links, and downloads them. It can use Playwright for age‑gate/verification handling, then switch to fast requests for bulk crawling.
 
 ## Setup
 
@@ -33,6 +32,7 @@ python scrape_dataset11.py --hybrid --headed --pause --pages 3745 --out download
 - `--max-pages N`: Limit pages processed (relative to start).
 - `--delay S`: Sleep between page fetches (seconds).
 - `--cooldown S`: Sleep after each page’s downloads (seconds).
+- `--threads N`: Download threads per page (default 1).
 - `--dry-run`: List files without downloading.
 - `--use-playwright`: Use Playwright for every page fetch (slower).
 - `--hybrid`: Use Playwright once for cookies, then `requests`.
