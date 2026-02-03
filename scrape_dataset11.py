@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import os
 import re
 import sys
@@ -221,6 +222,151 @@ def download_file(
     return dest_path, bytes_written, False
 
 
+def write_index_html(output_dir: str) -> None:
+    files = [
+        f for f in os.listdir(output_dir) if f.lower().endswith(".pdf") and os.path.isfile(os.path.join(output_dir, f))
+    ]
+    files.sort()
+    index_path = os.path.join(output_dir, "index.html")
+    files_json = json.dumps(files)
+    template = """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dataset 11 PDFs</title>
+  <style>
+    :root { --bg: #0f172a; --panel: #111827; --text: #e5e7eb; --muted: #9ca3af; --accent: #38bdf8; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; background: var(--bg); color: var(--text); }
+    header { padding: 12px 16px; background: #0b1220; border-bottom: 1px solid #1f2937; }
+    .wrap { display: grid; grid-template-columns: 320px 1fr; height: calc(100vh - 52px); }
+    .list { overflow: auto; border-right: 1px solid #1f2937; background: var(--panel); }
+    .viewer { overflow: auto; padding: 12px; }
+    input { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #374151; background: #0b1220; color: var(--text); }
+    .item { padding: 8px 12px; border-bottom: 1px solid #1f2937; cursor: pointer; }
+    .item:hover, .item.active { background: #111a2a; color: var(--accent); }
+    .controls { display: flex; gap: 8px; align-items: center; padding: 8px 0; }
+    button { background: #0b1220; color: var(--text); border: 1px solid #374151; padding: 6px 10px; cursor: pointer; }
+    button:hover { border-color: var(--accent); color: var(--accent); }
+    #canvas { width: 100%; max-width: 100%; }
+    #match { color: var(--muted); font-size: 12px; }
+    #pageInfo { color: var(--muted); font-size: 12px; }
+    #notice { color: var(--muted); font-size: 12px; }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.js"></script>
+</head>
+<body>
+  <header>
+    <div><strong>Dataset 11 PDFs</strong></div>
+    <div id="notice">If PDFs fail to load, serve this folder with a local web server (e.g. <code>python -m http.server</code>).</div>
+  </header>
+  <div class="wrap">
+    <div class="list">
+      <input id="filter" placeholder="Filter filenames…" />
+      <div id="items"></div>
+    </div>
+    <div class="viewer">
+      <div class="controls">
+        <button id="prev">Prev</button>
+        <button id="next">Next</button>
+        <span id="pageInfo"></span>
+        <input id="search" placeholder="Search text…" />
+        <button id="find">Find</button>
+        <span id="match"></span>
+      </div>
+      <canvas id="canvas"></canvas>
+    </div>
+  </div>
+<script>
+const files = __FILES_JSON__;
+const itemsEl = document.getElementById('items');
+const filterEl = document.getElementById('filter');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const pageInfo = document.getElementById('pageInfo');
+const matchEl = document.getElementById('match');
+let pdf = null;
+let pageNum = 1;
+let currentFile = null;
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.js";
+
+function renderPage(num) {
+  if (!pdf) return;
+  pdf.getPage(num).then(page => {
+    const viewport = page.getViewport({ scale: 1.25 });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    page.render({ canvasContext: ctx, viewport });
+    pageInfo.textContent = `Page ${num} / ${pdf.numPages}`;
+  });
+}
+
+function loadPdf(file) {
+  currentFile = file;
+  pageNum = 1;
+  const url = encodeURI(file);
+  pdfjsLib.getDocument(url).promise.then(doc => {
+    pdf = doc;
+    renderPage(pageNum);
+  });
+}
+
+function renderList(list) {
+  itemsEl.innerHTML = "";
+  list.forEach(name => {
+    const div = document.createElement('div');
+    div.className = 'item' + (name === currentFile ? ' active' : '');
+    div.textContent = name;
+    div.onclick = () => {
+      document.querySelectorAll('.item').forEach(i => i.classList.remove('active'));
+      div.classList.add('active');
+      loadPdf(name);
+    };
+    itemsEl.appendChild(div);
+  });
+}
+
+filterEl.addEventListener('input', () => {
+  const q = filterEl.value.toLowerCase();
+  renderList(files.filter(f => f.toLowerCase().includes(q)));
+});
+
+document.getElementById('prev').onclick = () => {
+  if (pdf && pageNum > 1) { pageNum--; renderPage(pageNum); }
+};
+document.getElementById('next').onclick = () => {
+  if (pdf && pageNum < pdf.numPages) { pageNum++; renderPage(pageNum); }
+};
+
+document.getElementById('find').onclick = async () => {
+  if (!pdf) return;
+  const term = document.getElementById('search').value.trim().toLowerCase();
+  if (!term) return;
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const text = await page.getTextContent();
+    const full = text.items.map(t => t.str).join(' ').toLowerCase();
+    if (full.includes(term)) {
+      pageNum = i;
+      renderPage(pageNum);
+      matchEl.textContent = `Match on page ${i}`;
+      return;
+    }
+  }
+  matchEl.textContent = "No matches";
+};
+
+renderList(files);
+if (files.length) loadPdf(files[0]);
+</script>
+</body>
+</html>
+"""
+    with open(index_path, "w", encoding="utf-8") as f:
+        f.write(template.replace("__FILES_JSON__", files_json))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Scrape DOJ Epstein data set 11 PDFs.")
     parser.add_argument("--out", default="downloads/dataset-11", help="Output directory")
@@ -236,6 +382,8 @@ def main() -> int:
     parser.add_argument("--start-page", type=int, default=None, help="Start page param (default auto)")
     parser.add_argument("--cooldown", type=float, default=0.0, help="Cooldown after each page downloads (seconds)")
     parser.add_argument("--threads", type=int, default=1, help="Download threads per page (default 1)")
+    parser.add_argument("--zero-retries", type=int, default=1, help="Retry pages with zero results")
+    parser.add_argument("--zero-cooldown", type=float, default=30.0, help="Cooldown before retrying zero-result pages")
     args = parser.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
@@ -283,6 +431,7 @@ def main() -> int:
     total_files_downloaded = 0
     total_files_skipped = 0
     start_time = time.time()
+    zero_pages: list[int] = []
 
     if args.hybrid and pw is not None:
         # Transfer cookies to requests session after clearing any gate once.
@@ -302,6 +451,8 @@ def main() -> int:
             pw=pw,
         )
         page_links = extract_pdf_links(soup)
+        if not page_links:
+            zero_pages.append(page)
         abs_page_links = [urljoin(BASE_URL, href) for href in page_links]
         human_page = (page - min_page) + 1
         print(f"Page {human_page}/{total_pages} (param {page}): {len(page_links)} pdf links")
@@ -380,11 +531,64 @@ def main() -> int:
         if args.cooldown > 0:
             time.sleep(args.cooldown)
 
+    if zero_pages and args.zero_retries > 0:
+        print(f"Zero-result pages: {len(zero_pages)}. Retrying after {args.zero_cooldown}s...")
+        time.sleep(args.zero_cooldown)
+        retry_pages = list(zero_pages)
+        zero_pages = []
+        for attempt in range(1, args.zero_retries + 1):
+            print(f"Retry attempt {attempt}/{args.zero_retries}...")
+            cookies = session.cookies.get_dict()
+            for page in retry_pages:
+                url = f"{BASE_URL}?page={page}"
+                soup = get_soup(
+                    url,
+                    session,
+                    force_playwright=args.use_playwright and not args.hybrid,
+                    headed=args.headed,
+                    pause=args.pause,
+                    debug_dir=debug_dir,
+                    pw=pw,
+                )
+                page_links = extract_pdf_links(soup)
+                if not page_links:
+                    zero_pages.append(page)
+                    continue
+                abs_page_links = [urljoin(BASE_URL, href) for href in page_links]
+                for link in abs_page_links:
+                    if link in seen_urls:
+                        continue
+                    seen_urls.add(link)
+                    _, bytes_written, skipped = download_file(link, args.out, session, args.dry_run, cookies)
+                    if skipped:
+                        total_files_skipped += 1
+                    else:
+                        total_files_downloaded += 1
+                        total_downloaded_bytes += bytes_written
+                print(f"Retry page {page}: {len(page_links)} pdf links")
+
+            if not zero_pages:
+                break
+            retry_pages = list(zero_pages)
+            zero_pages = []
+            time.sleep(args.zero_cooldown)
+
+    if zero_pages:
+        zero_path = os.path.join(args.out, "zero_pages.txt")
+        with open(zero_path, "w", encoding="utf-8") as f:
+            for p in sorted(set(zero_pages)):
+                f.write(f"{p}\n")
+        print(f"Remaining zero-result pages written to {zero_path}")
+
     total_mb = total_downloaded_bytes / (1024 * 1024)
     print(
         f"All pages done: {total_files_downloaded} downloaded, "
         f"{total_files_skipped} skipped, {total_mb:.2f} MB total."
     )
+
+    if not args.dry_run:
+        write_index_html(args.out)
+        print(f"Index written to {os.path.join(args.out, 'index.html')}")
 
     if pw is not None:
         pw.close()
