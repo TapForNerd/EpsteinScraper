@@ -33,6 +33,8 @@ python scrape_dataset11.py --hybrid --headed --pause --pages 3745 --out download
 - `--delay S`: Sleep between page fetches (seconds).
 - `--cooldown S`: Sleep after each page’s downloads (seconds).
 - `--threads N`: Download threads per page (default 1).
+- `--zero-retries N`: Retry pages that returned zero PDFs.
+- `--zero-cooldown S`: Sleep before retrying zero-result pages (seconds).
 - `--dry-run`: List files without downloading.
 - `--use-playwright`: Use Playwright for every page fetch (slower).
 - `--hybrid`: Use Playwright once for cookies, then `requests`.
@@ -44,3 +46,4 @@ python scrape_dataset11.py --hybrid --headed --pause --pages 3745 --out download
 
 - The site uses an age/consent gate. Use `--headed --pause` the first time to clear it.
 - Page numbering on the site may be zero-based. Use `--start-page 0` if needed.
+- After downloads, an `index.html` is generated in the output folder for browsing and searching PDFs. For best results, serve the folder with a local web server (e.g. `python -m http.server`).
