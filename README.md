@@ -1,6 +1,7 @@
 # Epstein Data Set 11 Scraper
 
-This script scrapes DOJ Epstein Data Set 11 pages, extracts PDF links, and downloads them. It can use Playwright for age‑gate/verification handling, then switch to fast requests for bulk crawling.
+Disclaimer: This script is just an example of how to assist when manually pursuing the site. For others, you shouldn't use this unless it complies with the current policy of the source site. Use at your own discretion. Always respect terms of service, robots.txt, and legal guidelines when scraping any website. This is for educational purposes only and may not be suitable for production use without proper authorization.This script scrapes DOJ Epstein Data Set 11 pages, extracts PDF links, and downloads them. It can use Playwright for age‑gate/verification handling, then switch to fast requests for bulk crawling.
+
 
 ## Setup
 
