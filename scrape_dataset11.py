@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -195,7 +196,13 @@ def safe_filename(url: str) -> str:
     return name
 
 
-def download_file(url: str, dest_dir: str, session: requests.Session, dry_run: bool) -> tuple[str, int, bool]:
+def download_file(
+    url: str,
+    dest_dir: str,
+    session: requests.Session,
+    dry_run: bool,
+    cookies: dict[str, str] | None = None,
+) -> tuple[str, int, bool]:
     filename = safe_filename(url)
     dest_path = os.path.join(dest_dir, filename)
     if os.path.exists(dest_path):
@@ -203,7 +210,7 @@ def download_file(url: str, dest_dir: str, session: requests.Session, dry_run: b
     if dry_run:
         return dest_path, 0, True
 
-    with session.get(url, headers=HEADERS, stream=True, timeout=60) as r:
+    with requests.get(url, headers=HEADERS, cookies=cookies, stream=True, timeout=60) as r:
         r.raise_for_status()
         bytes_written = 0
         with open(dest_path, "wb") as f:
@@ -228,6 +235,7 @@ def main() -> int:
     parser.add_argument("--hybrid", action="store_true", help="Use Playwright once for cookies, then Requests")
     parser.add_argument("--start-page", type=int, default=None, help="Start page param (default auto)")
     parser.add_argument("--cooldown", type=float, default=0.0, help="Cooldown after each page downloads (seconds)")
+    parser.add_argument("--threads", type=int, default=1, help="Download threads per page (default 1)")
     args = parser.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
@@ -302,19 +310,51 @@ def main() -> int:
         page_downloaded_files = 0
         page_skipped_files = 0
 
-        for link in abs_page_links:
-            if link in seen_urls:
-                page_skipped_files += 1
-                continue
-            seen_urls.add(link)
-            path, bytes_written, skipped = download_file(link, args.out, session, args.dry_run)
-            if skipped:
-                page_skipped_files += 1
-            else:
-                page_downloaded_files += 1
-                page_downloaded_bytes += bytes_written
-            status = "SKIP" if skipped else "DOWN"
-            print(f"{status} {link} -> {path}")
+        cookies = session.cookies.get_dict()
+
+        if args.threads <= 1:
+            for link in abs_page_links:
+                if link in seen_urls:
+                    page_skipped_files += 1
+                    continue
+                seen_urls.add(link)
+                path, bytes_written, skipped = download_file(link, args.out, session, args.dry_run, cookies)
+                if skipped:
+                    page_skipped_files += 1
+                else:
+                    page_downloaded_files += 1
+                    page_downloaded_bytes += bytes_written
+                status = "SKIP" if skipped else "DOWN"
+                print(f"{status} {link} -> {path}")
+        else:
+            to_fetch = []
+            for link in abs_page_links:
+                if link in seen_urls:
+                    page_skipped_files += 1
+                else:
+                    seen_urls.add(link)
+                    to_fetch.append(link)
+
+            with ThreadPoolExecutor(max_workers=args.threads) as pool:
+                future_map = {
+                    pool.submit(download_file, link, args.out, session, args.dry_run, cookies): link
+                    for link in to_fetch
+                }
+                for fut in as_completed(future_map):
+                    link = future_map[fut]
+                    try:
+                        path, bytes_written, skipped = fut.result()
+                    except Exception as e:
+                        page_skipped_files += 1
+                        print(f"ERR  {link} -> {e}")
+                        continue
+                    if skipped:
+                        page_skipped_files += 1
+                    else:
+                        page_downloaded_files += 1
+                        page_downloaded_bytes += bytes_written
+                    status = "SKIP" if skipped else "DOWN"
+                    print(f"{status} {link} -> {path}")
 
         total_downloaded_bytes += page_downloaded_bytes
         total_files_downloaded += page_downloaded_files
